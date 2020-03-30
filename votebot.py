@@ -1,4 +1,3 @@
-from vedis import Vedis
 from enum import Enum
 from itertools import groupby
 from bot import *
@@ -8,9 +7,10 @@ from dialog_bot_sdk.entities.media.InteractiveMediaGroup import InteractiveMedia
 from dialog_bot_sdk.interactive_media import InteractiveMediaGroup, InteractiveMedia, InteractiveMediaSelect, \
     InteractiveMediaConfirm, InteractiveMediaButton
 from dialog_bot_sdk.entities.UUID import UUID
+from pymongo import MongoClient
 from config import *
 
-logger = logging.getLogger('simple_example')
+logger = logging.getLogger('votebot')
 logger.setLevel(logging.DEBUG)
 ch = logging.StreamHandler()
 ch.setLevel(logging.DEBUG)
@@ -37,75 +37,56 @@ class PollStrategy(Strategy):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
-    def get_value(self, uid, db_name, hash_=None):
-        with Vedis(db_name) as db:
-            try:
-                if hash_:
-                    return db.Hash(hash_)[uid].decode()
-                else:
-                    return db[uid].decode()
-            except KeyError:
-                if db_name in [DBNames.STATES.value, DBNames.LAST_POLL_ID.value]:
-                    return PollStates.START.value
-                else:
-                    return ""  
+        self.client = MongoClient(MONGODBLINK)
+        self.db = self.client[DBNAME]
+                
+    def get_value(self, uid, table):
+        val = self.db[table].find_one({'_id': uid})
+        if val is None:
+            if table in [DBNames.STATES.value, DBNames.LAST_POLL_ID.value]:
+                return PollStates.START.value
+            else:
+                return ''
+        return val['value']
         
     def reset_state(self, uid):
-        with Vedis(DBNames.STATES.value) as db:
-            state = PollStates.START.value
-            db[uid] = state
-        with Vedis(DBNames.OPTIONS.value) as db:
-            db[uid] = ''
-            return state
+        poll_id = self.get_value(uid, DBNames.LAST_POLL_ID.value)
+        self.increment_value(uid, poll_id, DBNames.LAST_POLL_ID.value)
+        return self.set_value(uid, PollStates.START.value, DBNames.STATES.value)
     
-    def increment_value(self, uid, value, db_name):
-        self.set_value(uid, str(int(value) + 1), db_name)
-    
-    def set_value(self, uid, value, db_name, hash_=None):
-        with Vedis(db_name) as db:
-            if hash_:
-                db.Hash(hash_)[uid] = value
-            else:
-                db[uid] = value
+    def increment_value(self, uid, value, table):
+        self.set_value(uid, str(int(value) + 1), table)
                 
-    def add_value(self, value, db_name, set_name):
-        with Vedis(db_name) as db:
-            db.Set(set_name).add(value)
+    def set_value(self, uid, value, table):
+        self.db[table].replace_one({'_id': uid}, {'value': value}, upsert=True)
+        return value
+                
+    def add_value(self, value, table, uid):
+        val = self.db[table].find_one({'_id': uid})
+        if val is None:
+            self.db[table].insert_one({'_id': uid, 'value': [value]}) 
+        else:
+            self.db[table].update({'_id': uid}, {'$push': {'value': value}})     
             
-    def del_value(self, value, db_name, set_name):
-        with Vedis(db_name) as db:
-            db.Set(set_name).remove(value)        
-            
-    def get_dict_from_db(self, db_name, hash_name):
-        with Vedis(db_name) as db: 
-            try:
-                return db.Hash(hash_name).to_dict()
-            except:
-                return {}
+    def get_dict_from_db(self, table):
+        cursor = self.db[table].find({})
+        return {x['_id']: x['value'] for x in cursor}
         
-    def get_set_from_db(self, db_name, set_name):
-        with Vedis(db_name) as db: 
-            try:
-                return db.Set(set_name).to_set()
-            except:
-                return []
+    def get_set_from_db(self, table, uid):
+        return set(self.get_value(uid, table))      
             
     def get_answers(self, poll_id):
-        db_name = DBNames.POLLS.value
-        answers = self.get_dict_from_db(db_name, 'answers_'+poll_id)
-        res = {key.decode(): 100*len(list(group))//len(answers) for key, group in groupby(answers.values())}
-        users = {option:[key for (key, value) in answers.items() if value.decode() == option] for option in res.keys()}
+        answers = self.get_dict_from_db('answers_'+poll_id)
+        res = {key: 100*len(list(group))//len(answers) for key, group in groupby(answers.values())}
+        users = {option:[key for (key, value) in answers.items() if value == option] for option in res.keys()}
         return (users, res)
     
     
     def update_res(self, poll_id, close=False):
-        active = [poll_id]
-        db_name = DBNames.POLLS.value
-        for poll_id in active:
-            (users, res) = self.get_answers(poll_id)
-            self.update_poll(self.get_set_from_db(db_name, 'mids_'+poll_id), poll_id, res, close=close, users=users)
-            self.update_poll(self.get_set_from_db(db_name, 'creator_mids_'+poll_id), 
+        (users, res) = self.get_answers(poll_id)
+        table = DBNames.POLLS.value
+        self.update_poll(self.get_set_from_db(table, 'mids_'+poll_id), poll_id, res, close=close, users=users)
+        self.update_poll(self.get_set_from_db(table, 'creator_mids_'+poll_id), 
                              poll_id, res, creator=True, close=close, users=users)
             
     def send_buttons(self, peer, title, options):
@@ -139,7 +120,7 @@ class PollStrategy(Strategy):
             ) 
         
     def get_nicks_from_ids(self, uids):
-        uids = [int(uid.decode()) for uid in uids]
+        uids = [int(uid) for uid in uids]
         req = messaging_pb2.RequestLoadDialogs(
             min_date=0,
             limit=100,
@@ -193,7 +174,7 @@ class PollStrategy(Strategy):
         self.save_mids(self.send_buttons(peer=peer, **params), poll_id, creator)
             
     def update_poll(self, mids, poll_id,  vote_perc={}, creator=False, close=False, users={}):
-        uuids = [UUID(*[int(x) for x in mid.decode().split('_')]) for mid in mids][::-1]
+        uuids = [UUID(*[int(x) for x in mid.split('_')]) for mid in mids][::-1]
         msgs = self.bot.messaging.get_messages_by_id(uuids).wait()
         title = self.get_value(poll_id, DBNames.TITLES.value)
         options = self.get_value(poll_id, DBNames.OPTIONS.value).split(' \n ')
@@ -219,12 +200,12 @@ class PollStrategy(Strategy):
     
     def save_mids(self, uuid, poll_id, creator=False):
         uuid = {"msb": uuid.msb, "lsb": uuid.lsb}
-        db_name = DBNames.POLLS.value
         mid = str(uuid['msb']) + '_' + str(uuid['lsb'])
+        table = DBNames.POLLS.value
         if creator:
-            self.add_value(mid, db_name, 'creator_mids_'+str(poll_id))
+            self.add_value(mid, table, 'creator_mids_'+str(poll_id))
         else:
-            self.add_value(mid, db_name, 'mids_'+str(poll_id))
+            self.add_value(mid, table, 'mids_'+str(poll_id))
             
     def _handle_start(self, peer):
         uid = peer.id
@@ -243,8 +224,7 @@ class PollStrategy(Strategy):
         state = PollStates.ENTER_OPTION.value
         uid = peer.id
         if text == '/stop':
-            self.increment_value(uid, state, DBNames.STATES.value)  
-            self.increment_value(uid, poll_id.split('p')[1], DBNames.LAST_POLL_ID.value)  
+            self.increment_value(uid, state, DBNames.STATES.value)   
             params = config[PollStates(self.get_value(uid, DBNames.STATES.value)).name]
             button_params = {'title': params['title'], 'options': [(x + '_' + poll_id, y) for (x, y) in params['options']]}
             self.send_buttons(peer, **button_params)
@@ -315,7 +295,7 @@ class PollStrategy(Strategy):
         params = value.split('_')
         poll_id = params[2]
         answer = params[1]
-        self.set_value(uid, answer, DBNames.POLLS.value,'answers_' + poll_id)
+        self.set_value(uid, answer, 'answers_' + poll_id)
         self.update_res(poll_id)
     
     def on_click(self, params):
@@ -345,7 +325,7 @@ class PollStrategy(Strategy):
 if __name__ == '__main__':
     while True:
         try:
-            print('Start')
+            logger.info('Start')
             strategy = PollStrategy(token=BOT_TOKEN,
                                            endpoint=BOT_ENDPOINT,async_=False)
             strategy.start()

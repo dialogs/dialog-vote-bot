@@ -2,5 +2,5 @@ Cython==0.29.15
 dialog-api==1.33.0
 dialog-bot-sdk==3.0.3
 google-api-core==1.16.0
-pandas==1.0.3
-vedis==0.7.1
+pymongo==3.10.1
+
