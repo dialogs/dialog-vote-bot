@@ -12,7 +12,7 @@ from config import *
 
 logger = logging.getLogger('votebot')
 logger.setLevel(logging.DEBUG)
-ch = logging.StreamHandler()
+ch = logging.FileHandler(LOGS_FILE)
 ch.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 ch.setFormatter(formatter)
