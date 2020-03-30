@@ -41,3 +41,7 @@ pip3 install -r requirements.txt
 ```
 python3 votebot.py
 ```
+Если ваш virtualenv - ./venv_name, то без активации virtualenv запустить можно так:
+```
+./venv_name/bin/python3 votebot.py
+```
