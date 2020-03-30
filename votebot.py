@@ -8,6 +8,7 @@ from dialog_bot_sdk.interactive_media import InteractiveMediaGroup, InteractiveM
     InteractiveMediaConfirm, InteractiveMediaButton
 from dialog_bot_sdk.entities.UUID import UUID
 from pymongo import MongoClient
+from string import ascii_lowercase
 from config import *
 
 logger = logging.getLogger('votebot')
@@ -121,19 +122,20 @@ class PollStrategy(Strategy):
         
     def get_nicks_from_ids(self, uids):
         uids = [int(uid) for uid in uids]
-        req = messaging_pb2.RequestLoadDialogs(
-            min_date=0,
-            limit=100,
-            peers_to_load=[peers_pb2.Peer(type=peers_pb2.PEERTYPE_PRIVATE, id=uid) 
-                          for uid in uids]
+        request = search_pb2.RequestSimpleSearch(
+            criteria=[
+                search_pb2.SimpleSearchCondition(
+                    userProfile=search_pb2.SimpleUserProfileSearchCondition(query_string=c)
+                ) for c in ascii_lowercase
+            ]
         )
-        result = self.bot.internal.messaging.LoadDialogs(req)
+        result = self.bot.internal.search.SimpleSearch(request)
         users_list = self.bot.internal.updates.GetReferencedEntitites(
             sequence_and_updates_pb2.RequestGetReferencedEntitites(
-                users=list(result.user_peers)
+                users=list(result.user_out_peers)
             )
         )
-        return [user.data.nick.value for user in users_list.users if user.id in uids]
+        return [user.data.nick.value for user in users_list.users if int(user.id) in uids]
     
     def get_users_for_option(self, users, option):
         users = ', '.join(['@' + nick for nick in 
