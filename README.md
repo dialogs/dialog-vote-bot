@@ -1,5 +1,13 @@
 # Votebot
 
+### Params
+
+Параметры бота можно поменять в config.py:                                                                             
+BOT_TOKEN - bot token, полученный от Security Bot,                                              
+BOT_ENDPOINT - endpoint,                                                                      
+DBNAME - имя базы данных в mongodb, куда бот будет записывать все полученные данные,                               
+MONGODBLINK - ссылка для развертывания mongodb(хост+порт, либо Atlas). Здесь можно изменить порт, но также нужно изменить его [в самой mongodb](https://www.digitalocean.com/community/tutorials/how-to-install-mongodb-on-ubuntu-18-04-ru)
+
 
 ### Prerequisites
 
@@ -29,15 +37,6 @@ source venv_name/bin/activate
 ```
 pip3 install -r requirements.txt
 ```
-
-### Params
-
-Параметры бота можно поменять в config.py:                                                                             
-BOT_TOKEN - bot token, полученный от Security Bot,                                              
-BOT_ENDPOINT - endpoint,                                                                      
-DBNAME - имя базы данных в mongodb, куда бот будет записывать все полученные данные,                               
-MONGODBLINK - ссылка для развертывания mongodb(хост+порт, либо Atlas). Здесь можно изменить порт, но также нужно изменить его [в самой mongodb](https://www.digitalocean.com/community/tutorials/how-to-install-mongodb-on-ubuntu-18-04-ru)
-
 ### Run bot
 ```
 python3 votebot.py
