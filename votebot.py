@@ -78,7 +78,7 @@ class PollStrategy(Strategy):
             
     def get_answers(self, poll_id):
         answers = self.get_dict_from_db('answers_'+poll_id)
-        res = {key: 100*len(list(group))//len(answers) for key, group in groupby(answers.values())}
+        res = {key: 100*len(list(group))//len(answers) for key, group in groupby(sorted(answers.values()))}
         users = {option:[key for (key, value) in answers.items() if value == option] for option in res.keys()}
         return (users, res)
     
