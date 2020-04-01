@@ -185,19 +185,16 @@ class PollStrategy(Strategy):
             self.update_buttons(msg=msg, **params)
     
     def get_user_bot_groups(self, uid):
-        request = search_pb2.RequestPeerSearch(
-            query=[
-                search_pb2.SearchCondition(
-                    searchPeerTypeCondition=search_pb2.SearchPeerTypeCondition(
-                        peer_type=search_pb2.SEARCHPEERTYPE_GROUPS
-                    )
-                ),
-                search_pb2.SearchCondition(
-                    searchPieceText=search_pb2.SearchPieceText(query='')
-                )
-            ]
+        request = messaging_pb2.RequestLoadDialogs(
+            min_date=0,
+            limit=100000,
         )
-        response = self.bot.internal.search.PeerSearch(request).search_results
+        result = self.bot.internal.messaging.LoadDialogs(request)
+        response = self.bot.internal.updates.GetReferencedEntitites(
+            sequence_and_updates_pb2.RequestGetReferencedEntitites(
+                groups=list(result.group_peers)
+            )
+        ).groups
         return response
     
     def save_mids(self, uuid, poll_id, creator=False):
@@ -267,13 +264,13 @@ class PollStrategy(Strategy):
             self.set_value('show_' + poll_id, params[0], DBNames.POLLS.value)
         if 'publish' in value:
             self.update_res(poll_id, close=False)
-        groups = [x for x in self.get_user_bot_groups(uid) if x.is_joined.value]
+        groups = [x for x in self.get_user_bot_groups(uid)]
         self.bot.messaging.send_message(peer, 'Куда отправляем', [
                 InteractiveMediaGroup(
                     [
                         InteractiveMedia(
                             "select_id",
-                            InteractiveMediaSelect({'group_' + str(gr.peer.id) + '_' + str(poll_id) : gr.title for gr in groups}, "Выберите группу", "choose"),
+                            InteractiveMediaSelect({'group_' + str(gr.id) + '_' + str(poll_id) : gr.title for gr in groups}, "Выберите группу", "choose"),
                             InteractiveMediaStyle.INTERACTIVEMEDIASTYLE_DANGER,
                         )
                     ]
