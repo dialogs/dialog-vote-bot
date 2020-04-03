@@ -195,7 +195,7 @@ class PollStrategy(Strategy):
                 groups=list(result.group_peers)
             )
         ).groups
-        return response
+        return [x for x in response if x.self_member.uid != 0]
     
     def save_mids(self, uuid, poll_id, creator=False):
         uuid = {"msb": uuid.msb, "lsb": uuid.lsb}
