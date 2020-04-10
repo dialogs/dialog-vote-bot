@@ -238,9 +238,10 @@ class PollStrategy(Strategy):
         bot_name = self.bot.user_info.user.data.nick.value
         if self._find_publish(params, bot_name):
             return
-        if params.forward:
+        while params.forward:
             msgs = self.bot.messaging.get_messages_by_id([UUID.from_api(params.forward[0])]).wait()
             params.message.text_message.text = msgs[0].message.text_message.text
+            params.forward = msgs[0].forward
             self._find_publish(params, bot_name)
         
     def _find_publish(self, params, bot_name):
@@ -297,19 +298,6 @@ class PollStrategy(Strategy):
         bot_name = self.bot.user_info.user.data.nick.value
         title = self.get_value(poll_id, DBNames.TITLES.value)
         self.bot.messaging.send_message(peer, '@{} {} {}'.format(bot_name, title, poll_id.split('p')[1]))
-        #groups = [x for x in self.get_user_bot_groups(uid)]
-        #self.bot.messaging.send_message(peer, 'Куда отправляем', [
-        #        InteractiveMediaGroup(
-        #            [
-        #                InteractiveMedia(
-        #                    "select_id",
-        #                    InteractiveMediaSelect({'group_' + str(gr.id) + '_' + str(poll_id) : gr.title for gr in groups}, "Выберите группу", "choose"),
-        #                    InteractiveMediaStyle.INTERACTIVEMEDIASTYLE_DANGER,
-        #                )
-        #            ]
-        #        )
-        #    ])
-
 
     def _handle_new_answer(self, peer, value, uid):
         params = value.split('_')
