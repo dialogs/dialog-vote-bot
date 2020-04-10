@@ -233,11 +233,40 @@ class PollStrategy(Strategy):
                 text = options + ' \n ' + text
             self.set_value(poll_id, text, DBNames.OPTIONS.value)
             self.bot.messaging.send_message(peer, config[PollStates(state).name])  
+            
+    def _handle_send(self, params):
+        bot_name = self.bot.user_info.user.data.nick.value
+        if self._find_publish(params, bot_name):
+            return
+        if params.forward:
+            msgs = self.bot.messaging.get_messages_by_id([UUID.from_api(params.forward[0])]).wait()
+            params.message.text_message.text = msgs[0].message.text_message.text
+            self._find_publish(params, bot_name)
         
+    def _find_publish(self, params, bot_name):
+        text = params.message.text_message.text
+        if '@' + bot_name in text:
+            _id =  text.split(' ')[-1]
+            p_name = text.replace('@{} '.format(bot_name), '')
+            p_name = p_name.replace(' ' + _id, '')
+            poll_id = str(params.sender_peer.id) + 'p' + str(_id)
+            group = self.bot.groups.find_group_by_id(params.peer.id).wait()
+            title = self.get_value(poll_id, DBNames.TITLES.value)
+            if not title or  p_name != title.strip():
+                mid = UUID.from_api(params.mid)
+                self.bot.messaging.reply(params.peer, [mid], config['WRONG_MESSAGE'])
+                return
+            options = self.get_value(poll_id, DBNames.OPTIONS.value)
+            self.send_poll(params.peer, title, options.split(' \n '), poll_id)
+            self.send_poll(params.sender_peer,
+                            'Готово, опрос опубликован в группу {}. \n \n {}'.format(group.data.title, title), options.split(' \n '), creator=True, poll_id=poll_id)
+            return True
+
     
     def on_msg(self, params):
             peer = params.peer
             if peer.id != params.sender_peer.id:
+                self._handle_send(params)
                 return
             text = params.message.text_message.text
             uid = peer.id
@@ -264,30 +293,22 @@ class PollStrategy(Strategy):
             self.set_value('show_' + poll_id, params[0], DBNames.POLLS.value)
         if 'publish' in value:
             self.update_res(poll_id, close=False)
-        groups = [x for x in self.get_user_bot_groups(uid)]
-        self.bot.messaging.send_message(peer, 'Куда отправляем', [
-                InteractiveMediaGroup(
-                    [
-                        InteractiveMedia(
-                            "select_id",
-                            InteractiveMediaSelect({'group_' + str(gr.id) + '_' + str(poll_id) : gr.title for gr in groups}, "Выберите группу", "choose"),
-                            InteractiveMediaStyle.INTERACTIVEMEDIASTYLE_DANGER,
-                        )
-                    ]
-                )
-            ])
-
-
-    def _handle_send(self, peer, value, uid):
-        params = value.split('_')
-        group_id = int(params[1])
-        poll_id = params[2]
-        group = self.bot.groups.find_group_by_id(group_id).wait()
+        self.bot.messaging.send_message(peer, config['PUBLISH_INFO'])
+        bot_name = self.bot.user_info.user.data.nick.value
         title = self.get_value(poll_id, DBNames.TITLES.value)
-        options = self.get_value(poll_id, DBNames.OPTIONS.value)
-        self.send_poll(group.peer, title, options.split(' \n '), poll_id)
-        self.send_poll(peer,
-                        'Готово, опрос опубликован в группу {}. \n \n {}'.format(group.data.title, title), options.split(' \n '), creator=True, poll_id=poll_id)
+        self.bot.messaging.send_message(peer, '@{} {} {}'.format(bot_name, title, poll_id.split('p')[1]))
+        #groups = [x for x in self.get_user_bot_groups(uid)]
+        #self.bot.messaging.send_message(peer, 'Куда отправляем', [
+        #        InteractiveMediaGroup(
+        #            [
+        #                InteractiveMedia(
+        #                    "select_id",
+        #                    InteractiveMediaSelect({'group_' + str(gr.id) + '_' + str(poll_id) : gr.title for gr in groups}, "Выберите группу", "choose"),
+        #                    InteractiveMediaStyle.INTERACTIVEMEDIASTYLE_DANGER,
+        #                )
+        #            ]
+        #        )
+        #    ])
 
 
     def _handle_new_answer(self, peer, value, uid):
