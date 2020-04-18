@@ -1,15 +1,16 @@
 from enum import Enum
 from itertools import groupby
-from bot import *
 import logging
 from dialog_api import peers_pb2, users_pb2, messaging_pb2, search_pb2, sequence_and_updates_pb2, groups_pb2
 from dialog_bot_sdk.entities.media.InteractiveMediaGroup import InteractiveMediaStyle
 from dialog_bot_sdk.interactive_media import InteractiveMediaGroup, InteractiveMedia, InteractiveMediaSelect, \
     InteractiveMediaConfirm, InteractiveMediaButton
 from dialog_bot_sdk.entities.UUID import UUID
+from dialog_bot_sdk.entities.Peer import Peer, PeerType
 from pymongo import MongoClient
 from string import ascii_lowercase
 from config import *
+from bot import *
 
 logger = logging.getLogger('votebot')
 logger.setLevel(logging.DEBUG)
@@ -248,18 +249,17 @@ class PollStrategy(Strategy):
         text = params.message.text_message.text
         if '@' + bot_name in text:
             _id =  text.split(' ')[-1]
-            p_name = text.replace('@{} '.format(bot_name), '')
-            p_name = p_name.replace(' ' + _id, '')
-            poll_id = str(params.sender_peer.id) + 'p' + str(_id)
+            poll_id = text.replace('@{} '.format(bot_name), '')
             group = self.bot.groups.find_group_by_id(params.peer.id).wait()
             title = self.get_value(poll_id, DBNames.TITLES.value)
-            if not title or  p_name != title.strip():
+            if not title:
                 mid = UUID.from_api(params.mid)
                 self.bot.messaging.reply(params.peer, [mid], config['WRONG_MESSAGE'])
                 return
+            uid = int(poll_id.split('p')[0])
             options = self.get_value(poll_id, DBNames.OPTIONS.value)
             self.send_poll(params.peer, title, options.split(' \n '), poll_id)
-            self.send_poll(params.sender_peer,
+            self.send_poll(Peer(uid, PeerType.PEERTYPE_PRIVATE),
                             'Готово, опрос опубликован в группу {}. \n \n {}'.format(group.data.title, title), options.split(' \n '), creator=True, poll_id=poll_id)
             return True
 
@@ -297,7 +297,7 @@ class PollStrategy(Strategy):
         self.bot.messaging.send_message(peer, config['PUBLISH_INFO'])
         bot_name = self.bot.user_info.user.data.nick.value
         title = self.get_value(poll_id, DBNames.TITLES.value)
-        self.bot.messaging.send_message(peer, '@{} {} {}'.format(bot_name, title, poll_id.split('p')[1]))
+        self.bot.messaging.send_message(peer, '@{} {}'.format(bot_name, poll_id))
 
     def _handle_new_answer(self, peer, value, uid):
         params = value.split('_')
